@@ -70,10 +70,8 @@ const IndexPage = () => {
     }
 
     if (isRecording) {
-      // 正在录音中，点击停止
       recorderManager?.stop()
     } else {
-      // 未录音，点击开始
       recorderManager?.start({
         format: 'wav',
         sampleRate: 16000,
@@ -87,8 +85,25 @@ const IndexPage = () => {
     setRecognizedText('')
   }
 
-  const handleToggleOrientation = () => {
-    setIsLandscape((prev) => !prev)
+  const handleToggleOrientation = async () => {
+    const newIsLandscape = !isLandscape
+
+    // 尝试使用设备原生的屏幕旋转 API
+    try {
+      if (isMiniApp) {
+        // 使用原生 API 切换屏幕方向（微信/抖音小程序）
+        const st = (Taro as any).setScreenOrientation
+        if (typeof st === 'function') {
+          await st({ orientation: newIsLandscape ? 'landscape' : 'portrait' })
+        }
+      } else if (typeof window !== 'undefined' && (window as any).screen?.orientation?.lock) {
+        await (window as any).screen.orientation.lock(newIsLandscape ? 'landscape' : 'portrait')
+      }
+    } catch (err) {
+      console.log('屏幕旋转 API 不可用，仅切换布局', err)
+    }
+
+    setIsLandscape(newIsLandscape)
   }
 
   const handleTextSubmit = () => {
@@ -98,12 +113,12 @@ const IndexPage = () => {
   }
 
   return (
-    <View
-      className={`flex flex-col h-screen bg-white ${isLandscape ? 'fixed inset-0' : ''}`}
-      style={isLandscape ? { transform: 'rotate(90deg)', width: '100vh', height: '100vw' } : {}}
-    >
+    <View className="flex flex-col h-screen bg-white">
       {/* 工具栏 */}
-      <View className="flex flex-row items-center justify-between px-4 py-3 border-b border-gray-100">
+      <View
+        className="flex flex-row items-center justify-between px-4 py-3 border-b border-gray-100"
+        style={{ position: 'relative', zIndex: 10 }}
+      >
         <Text className="block text-sm text-gray-500">
           {recognizedText ? '点击下方按钮开始录音' : '语音转文字'}
         </Text>
@@ -124,9 +139,11 @@ const IndexPage = () => {
       {/* 主区域：显示识别结果或初始引导 */}
       <View className="flex-1 flex flex-col px-4 pt-6">
         {recognizedText ? (
-          <Text className="block text-5xl font-bold text-gray-900 text-left leading-relaxed break-all">
-            {recognizedText}
-          </Text>
+          <View className="flex-1 flex items-center justify-center">
+            <Text className="block text-5xl font-bold text-gray-900 text-left leading-relaxed break-all">
+              {recognizedText}
+            </Text>
+          </View>
         ) : (
           <View className="flex-1 flex items-center justify-center">
             <View className="flex flex-col items-center gap-2">
