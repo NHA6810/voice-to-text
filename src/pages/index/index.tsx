@@ -85,25 +85,8 @@ const IndexPage = () => {
     setRecognizedText('')
   }
 
-  const handleToggleOrientation = async () => {
-    const newIsLandscape = !isLandscape
-
-    // 尝试使用设备原生的屏幕旋转 API
-    try {
-      if (isMiniApp) {
-        // 使用原生 API 切换屏幕方向（微信/抖音小程序）
-        const st = (Taro as any).setScreenOrientation
-        if (typeof st === 'function') {
-          await st({ orientation: newIsLandscape ? 'landscape' : 'portrait' })
-        }
-      } else if (typeof window !== 'undefined' && (window as any).screen?.orientation?.lock) {
-        await (window as any).screen.orientation.lock(newIsLandscape ? 'landscape' : 'portrait')
-      }
-    } catch (err) {
-      console.log('屏幕旋转 API 不可用，仅切换布局', err)
-    }
-
-    setIsLandscape(newIsLandscape)
+  const handleToggleOrientation = () => {
+    setIsLandscape((prev) => !prev)
   }
 
   const handleTextSubmit = () => {
@@ -115,17 +98,18 @@ const IndexPage = () => {
   return (
     <View className="flex flex-col h-screen bg-white">
       {/* 工具栏 */}
-      <View
-        className="flex flex-row items-center justify-between px-4 py-3 border-b border-gray-100"
-        style={{ position: 'relative', zIndex: 10 }}
-      >
+      <View className="flex flex-row items-center justify-between px-4 py-3 border-b border-gray-100 z-10">
         <Text className="block text-sm text-gray-500">
           {recognizedText ? '点击下方按钮开始录音' : '语音转文字'}
         </Text>
         <View className="flex flex-row items-center gap-3">
           {/* 横竖屏切换 */}
           <View onClick={handleToggleOrientation} className="p-2 rounded-full active:bg-gray-100">
-            <RotateCw size={20} color="#666" />
+            <RotateCw
+              size={20}
+              color="#666"
+              className={isLandscape ? 'rotate-90' : ''}
+            />
           </View>
           {/* 清屏按钮 */}
           {recognizedText && (
@@ -137,10 +121,14 @@ const IndexPage = () => {
       </View>
 
       {/* 主区域：显示识别结果或初始引导 */}
-      <View className="flex-1 flex flex-col px-4 pt-6">
+      <View className={`flex-1 flex flex-col ${isLandscape ? 'px-8' : 'px-4'} pt-6`}>
         {recognizedText ? (
           <View className="flex-1 flex items-center justify-center">
-            <Text className="block text-5xl font-bold text-gray-900 text-left leading-relaxed break-all">
+            <Text
+              className={`block font-bold text-gray-900 leading-relaxed break-all ${
+                isLandscape ? 'text-6xl text-center' : 'text-5xl text-left'
+              }`}
+            >
               {recognizedText}
             </Text>
           </View>
