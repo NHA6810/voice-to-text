@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input'
 import { useState, useEffect } from 'react'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
+import { RotateCw, Trash2 } from 'lucide-react-taro'
 import './index.css'
 
 const IndexPage = () => {
@@ -11,6 +12,7 @@ const IndexPage = () => {
   const [recorderManager, setRecorderManager] = useState<Taro.RecorderManager | null>(null)
   const [textInput, setTextInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isLandscape, setIsLandscape] = useState(false)
 
   const isMiniApp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP || Taro.getEnv() === Taro.ENV_TYPE.TT
 
@@ -61,22 +63,32 @@ const IndexPage = () => {
     }
   }, [isMiniApp])
 
-  const handleTouchStart = () => {
+  const handleToggleRecord = () => {
     if (!isMiniApp) {
       Taro.showToast({ title: '录音仅支持小程序', icon: 'none' })
       return
     }
-    recorderManager?.start({
-      format: 'wav',
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      frameSize: 50
-    })
+
+    if (isRecording) {
+      // 正在录音中，点击停止
+      recorderManager?.stop()
+    } else {
+      // 未录音，点击开始
+      recorderManager?.start({
+        format: 'wav',
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        frameSize: 50
+      })
+    }
   }
 
-  const handleTouchEnd = () => {
-    if (!isMiniApp) return
-    recorderManager?.stop()
+  const handleClear = () => {
+    setRecognizedText('')
+  }
+
+  const handleToggleOrientation = () => {
+    setIsLandscape((prev) => !prev)
   }
 
   const handleTextSubmit = () => {
@@ -86,21 +98,45 @@ const IndexPage = () => {
   }
 
   return (
-    <View className="flex flex-col h-screen bg-white">
+    <View
+      className={`flex flex-col h-screen bg-white ${isLandscape ? 'fixed inset-0' : ''}`}
+      style={isLandscape ? { transform: 'rotate(90deg)', width: '100vh', height: '100vw' } : {}}
+    >
+      {/* 工具栏 */}
+      <View className="flex flex-row items-center justify-between px-4 py-3 border-b border-gray-100">
+        <Text className="block text-sm text-gray-500">
+          {recognizedText ? '点击下方按钮开始录音' : '语音转文字'}
+        </Text>
+        <View className="flex flex-row items-center gap-3">
+          {/* 横竖屏切换 */}
+          <View onClick={handleToggleOrientation} className="p-2 rounded-full active:bg-gray-100">
+            <RotateCw size={20} color="#666" />
+          </View>
+          {/* 清屏按钮 */}
+          {recognizedText && (
+            <View onClick={handleClear} className="p-2 rounded-full active:bg-gray-100">
+              <Trash2 size={20} color="#666" />
+            </View>
+          )}
+        </View>
+      </View>
+
       {/* 主区域：显示识别结果或初始引导 */}
-      <View className="flex-1 flex items-center justify-center px-4">
+      <View className="flex-1 flex flex-col px-4 pt-6">
         {recognizedText ? (
-          <Text className="block text-6xl font-bold text-gray-900 text-center leading-relaxed break-all">
+          <Text className="block text-5xl font-bold text-gray-900 text-left leading-relaxed break-all">
             {recognizedText}
           </Text>
         ) : (
-          <View className="flex flex-col items-center gap-2">
-            <Text className="block text-3xl font-bold text-gray-900">
-              语音转文字
-            </Text>
-            <Text className="block text-sm text-gray-400">
-              按住下方按钮开始说话
-            </Text>
+          <View className="flex-1 flex items-center justify-center">
+            <View className="flex flex-col items-center gap-2">
+              <Text className="block text-3xl font-bold text-gray-900">
+                语音转文字
+              </Text>
+              <Text className="block text-sm text-gray-400">
+                点击下方按钮开始录音
+              </Text>
+            </View>
           </View>
         )}
       </View>
@@ -115,17 +151,16 @@ const IndexPage = () => {
           ) : (
             <View
               className={`w-24 h-24 rounded-full flex items-center justify-center select-none active:scale-90 transition-transform ${
-                isRecording ? 'bg-blue-100' : 'bg-gray-100'
+                isRecording ? 'bg-red-100' : 'bg-gray-100'
               }`}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
+              onClick={handleToggleRecord}
             >
               <Text
                 className={`block text-base font-bold ${
-                  isRecording ? 'text-blue-600' : 'text-gray-600'
+                  isRecording ? 'text-red-500' : 'text-gray-600'
                 }`}
               >
-                {isRecording ? '录音中...' : '按住说话'}
+                {isRecording ? '停止' : '开始录音'}
               </Text>
             </View>
           )}
