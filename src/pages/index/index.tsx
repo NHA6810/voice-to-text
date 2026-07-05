@@ -86,7 +86,27 @@ const IndexPage = () => {
   }
 
   const handleToggleOrientation = () => {
-    setIsLandscape((prev) => !prev)
+    const newIsLandscape = !isLandscape
+    const env = Taro.getEnv()
+
+    // 小程序端：调用原生屏幕旋转 API
+    try {
+      if (env === Taro.ENV_TYPE.WEAPP) {
+        const wxApi = (globalThis as any).wx
+        if (wxApi?.setScreenOrientation) {
+          wxApi.setScreenOrientation({ orientation: newIsLandscape ? 'landscape' : 'portrait' })
+        }
+      } else if (env === Taro.ENV_TYPE.TT) {
+        const ttApi = (globalThis as any).tt
+        if (ttApi?.setScreenOrientation) {
+          ttApi.setScreenOrientation({ orientation: newIsLandscape ? 'landscape' : 'portrait' })
+        }
+      }
+    } catch (err) {
+      console.log('屏幕旋转 API 不可用', err)
+    }
+
+    setIsLandscape(newIsLandscape)
   }
 
   const handleTextSubmit = () => {
