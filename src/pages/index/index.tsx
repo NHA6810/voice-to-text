@@ -26,28 +26,52 @@ const IndexPage = () => {
       })
 
       manager.onStop(async (res) => {
-        console.log('录音结束', res.tempFilePath)
+        console.log('[录音结束] tempFilePath:', res.tempFilePath)
         setIsRecording(false)
 
         try {
           setIsLoading(true)
           const fileSystemManager = Taro.getFileSystemManager()
           const arrayBuffer = fileSystemManager.readFileSync(res.tempFilePath) as ArrayBuffer
+          console.log('[音频] 原始大小:', arrayBuffer.byteLength, 'bytes')
+
+          if (arrayBuffer.byteLength < 100) {
+            throw new Error('录音文件过小，可能未录制到有效声音')
+          }
+
           const base64 = Taro.arrayBufferToBase64(arrayBuffer)
+          console.log('[音频] base64长度:', base64.length)
 
           const result = await Network.request({
             url: '/api/asr/recognize',
             method: 'POST',
             data: { audioData: base64 }
           })
-          console.log('ASR结果:', result.data)
 
-          if (result.data?.data?.text) {
-            setRecognizedText(result.data.data.text)
+          console.log('[ASR响应] 完整响应:', JSON.stringify(result.data))
+
+          // 检查响应结构
+          const respBody = result.data
+          if (respBody?.code === 200 && respBody?.data?.text !== undefined) {
+            const text = respBody.data.text
+            if (text) {
+              setRecognizedText(text)
+            } else {
+              setRecognizedText('（未识别到语音内容，请重试）')
+            }
+          } else {
+            console.error('[ASR] 响应格式异常:', respBody)
+            Taro.showToast({
+              title: respBody?.msg || '识别结果异常',
+              icon: 'none'
+            })
           }
-        } catch (err) {
-          console.error('语音识别失败', err)
-          Taro.showToast({ title: '识别失败，请重试', icon: 'none' })
+        } catch (err: any) {
+          console.error('[ASR] 识别失败:', err.message || err)
+          Taro.showToast({
+            title: err.message?.includes('过小') ? err.message : '识别失败，请重试',
+            icon: 'none'
+          })
         } finally {
           setIsLoading(false)
         }
