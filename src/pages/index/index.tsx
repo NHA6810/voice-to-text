@@ -13,8 +13,24 @@ const IndexPage = () => {
   const [textInput, setTextInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isLandscape, setIsLandscape] = useState(false)
+  const [serverOk, setServerOk] = useState(true)
 
   const isMiniApp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP || Taro.getEnv() === Taro.ENV_TYPE.TT
+
+  // 启动时检查服务器连通性
+  useEffect(() => {
+    const checkServer = async () => {
+      try {
+        const res = await Network.request({ url: '/api/health', method: 'GET' })
+        console.log('[健康检查] 服务器连接正常:', res.data)
+        setServerOk(true)
+      } catch (err) {
+        console.error('[健康检查] 服务器连接失败:', err)
+        setServerOk(false)
+      }
+    }
+    checkServer()
+  }, [])
 
   useEffect(() => {
     if (isMiniApp) {
@@ -68,10 +84,16 @@ const IndexPage = () => {
           }
         } catch (err: any) {
           console.error('[ASR] 识别失败:', err.message || err)
-          Taro.showToast({
-            title: err.message?.includes('过小') ? err.message : '识别失败，请重试',
-            icon: 'none'
-          })
+          // 网络错误时提示更明确
+          const msg = err.message || ''
+          if (msg.includes('timeout') || msg.includes('fail') || msg.includes('network')) {
+            setServerOk(false)
+            Taro.showToast({ title: '服务连接失败，请返回重新扫码', icon: 'none', duration: 3000 })
+          } else if (msg.includes('过小')) {
+            Taro.showToast({ title: msg, icon: 'none' })
+          } else {
+            Taro.showToast({ title: '识别失败，请重试', icon: 'none' })
+          }
         } finally {
           setIsLoading(false)
         }
@@ -166,7 +188,18 @@ const IndexPage = () => {
 
       {/* 主区域：显示识别结果或初始引导 */}
       <View className={`flex-1 flex flex-col ${isLandscape ? 'px-8' : 'px-4'} pt-6`}>
-        {recognizedText ? (
+        {!serverOk ? (
+          <View className="flex-1 flex items-center justify-center">
+            <View className="flex flex-col items-center gap-2">
+              <Text className="block text-2xl font-bold text-red-500 text-center">
+                服务连接失败
+              </Text>
+              <Text className="block text-sm text-gray-500 text-center">
+                预览服务已过期，请重新扫码打开小程序
+              </Text>
+            </View>
+          </View>
+        ) : recognizedText ? (
           <View className="flex-1 flex items-center justify-center">
             <Text
               className={`block font-bold text-gray-900 leading-relaxed break-all ${
