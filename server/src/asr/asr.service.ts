@@ -25,9 +25,16 @@ export class AsrService {
       });
 
       console.log('ASR 识别结果:', result.text);
-      return { text: result.text };
+      return { text: result.text || '' };
     } catch (error) {
+      const msg = (error.message || '').toLowerCase();
       console.error('ASR 识别失败:', error.message);
+
+      // 无有效语音 → 不抛异常，返回空文本（前端展示友好提示）
+      if (msg.includes('no valid speech') || msg.includes('empty audio') || msg.includes('silence')) {
+        return { text: '' };
+      }
+
       throw new BadRequestException('语音识别失败，请重试');
     }
   }

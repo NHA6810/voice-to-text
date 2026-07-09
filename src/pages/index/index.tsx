@@ -66,14 +66,23 @@ const IndexPage = () => {
 
           console.log('[ASR响应] 完整响应:', JSON.stringify(result.data))
 
-          // 检查响应结构
           const respBody = result.data
+
+          // 后端返回业务错误（如 ASR 服务异常）
+          if (respBody?.statusCode && respBody?.statusCode !== 200) {
+            console.error('[ASR] 后端返回错误:', respBody)
+            const errMsg = respBody?.message || '识别结果异常'
+            Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
+            return
+          }
+
+          // 正常业务响应
           if (respBody?.code === 200 && respBody?.data?.text !== undefined) {
             const text = respBody.data.text
             if (text) {
               setRecognizedText(text)
             } else {
-              setRecognizedText('（未识别到语音内容，请重试）')
+              setRecognizedText('（未识别到语音内容，请靠近麦克风重试）')
             }
           } else {
             console.error('[ASR] 响应格式异常:', respBody)
@@ -92,7 +101,7 @@ const IndexPage = () => {
           } else if (msg.includes('过小')) {
             Taro.showToast({ title: msg, icon: 'none' })
           } else {
-            Taro.showToast({ title: '识别失败，请重试', icon: 'none' })
+            Taro.showToast({ title: '网络请求失败，请重试', icon: 'none' })
           }
         } finally {
           setIsLoading(false)
