@@ -44,3 +44,4 @@ assets/private.*.key
 
 .cozeproj/reduction
 node-compile-cache/
+.codegraph
