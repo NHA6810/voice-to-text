@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input'
 import { useState, useEffect } from 'react'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
-import { RotateCw, Trash2 } from 'lucide-react-taro'
+import { RotateCw, Trash2, ZoomIn, ZoomOut } from 'lucide-react-taro'
 import './index.css'
 
 const IndexPage = () => {
@@ -14,6 +14,18 @@ const IndexPage = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isLandscape, setIsLandscape] = useState(false)
   const [serverOk, setServerOk] = useState(true)
+  const [fontSizeLevel, setFontSizeLevel] = useState(3)
+
+  const FONT_SIZE_CLASSES = ['text-3xl', 'text-4xl', 'text-5xl', 'text-6xl', 'text-7xl']
+  const getFontSizeClass = () => FONT_SIZE_CLASSES[fontSizeLevel - 1] || 'text-5xl'
+
+  const handleIncreaseFont = () => {
+    setFontSizeLevel((prev) => Math.min(prev + 1, 5))
+  }
+
+  const handleDecreaseFont = () => {
+    setFontSizeLevel((prev) => Math.max(prev - 1, 1))
+  }
 
   const isMiniApp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP || Taro.getEnv() === Taro.ENV_TYPE.TT
 
@@ -178,6 +190,14 @@ const IndexPage = () => {
           {recognizedText ? '点击下方按钮开始录音' : '语音转文字'}
         </Text>
         <View className="flex flex-row items-center gap-3">
+          {/* 字体缩小 */}
+          <View onClick={handleDecreaseFont} className="p-2 rounded-full active:bg-gray-100">
+            <ZoomOut size={20} color={fontSizeLevel > 1 ? '#666' : '#ccc'} />
+          </View>
+          {/* 字体放大 */}
+          <View onClick={handleIncreaseFont} className="p-2 rounded-full active:bg-gray-100">
+            <ZoomIn size={20} color={fontSizeLevel < 5 ? '#666' : '#ccc'} />
+          </View>
           {/* 横竖屏切换 */}
           <View onClick={handleToggleOrientation} className="p-2 rounded-full active:bg-gray-100">
             <RotateCw
@@ -212,7 +232,7 @@ const IndexPage = () => {
           <View className="flex-1 flex items-center justify-center">
             <Text
               className={`block font-bold text-gray-900 leading-relaxed break-all ${
-                isLandscape ? 'text-6xl text-center' : 'text-5xl text-left'
+                isLandscape ? `${getFontSizeClass()} text-center` : `${getFontSizeClass()} text-left`
               }`}
             >
               {recognizedText}
