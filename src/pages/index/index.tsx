@@ -1,9 +1,9 @@
 import { View, Text } from '@tarojs/components'
 import { Input } from '@/components/ui/input'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
-import { RotateCw, Trash2, ZoomIn, ZoomOut } from 'lucide-react-taro'
+import { RotateCw, Trash2, ZoomIn, ZoomOut, Mic } from 'lucide-react-taro'
 import './index.css'
 
 const IndexPage = () => {
@@ -15,6 +15,11 @@ const IndexPage = () => {
   const [isLandscape, setIsLandscape] = useState(false)
   const [serverOk, setServerOk] = useState(true)
   const [fontSizeLevel, setFontSizeLevel] = useState(3)
+  const [webRecorderSupported, setWebRecorderSupported] = useState(false)
+
+  // Web 录音相关 refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
 
   const FONT_SIZE_CLASSES = ['text-3xl', 'text-4xl', 'text-5xl', 'text-6xl', 'text-7xl']
   const getFontSizeClass = () => FONT_SIZE_CLASSES[fontSizeLevel - 1] || 'text-5xl'
@@ -44,6 +49,19 @@ const IndexPage = () => {
     checkServer()
   }, [])
 
+  // 检查 Web 录音支持
+  useEffect(() => {
+    if (!isMiniApp) {
+      const supported = typeof navigator !== 'undefined' &&
+        !!navigator.mediaDevices &&
+        !!navigator.mediaDevices.getUserMedia &&
+        typeof MediaRecorder !== 'undefined'
+      setWebRecorderSupported(supported)
+      console.log('[Web录音] 支持状态:', supported)
+    }
+  }, [isMiniApp])
+
+  // 小程序端：初始化 RecorderManager
   useEffect(() => {
     if (isMiniApp) {
       const manager = Taro.getRecorderManager()
@@ -56,68 +74,7 @@ const IndexPage = () => {
       manager.onStop(async (res) => {
         console.log('[录音结束] tempFilePath:', res.tempFilePath)
         setIsRecording(false)
-
-        try {
-          setIsLoading(true)
-          const fileSystemManager = Taro.getFileSystemManager()
-          const arrayBuffer = fileSystemManager.readFileSync(res.tempFilePath) as ArrayBuffer
-          console.log('[音频] 原始大小:', arrayBuffer.byteLength, 'bytes')
-
-          if (arrayBuffer.byteLength < 100) {
-            throw new Error('录音文件过小，可能未录制到有效声音')
-          }
-
-          const base64 = Taro.arrayBufferToBase64(arrayBuffer)
-          console.log('[音频] base64长度:', base64.length)
-
-          const result = await Network.request({
-            url: '/api/asr/recognize',
-            method: 'POST',
-            data: { audioData: base64 }
-          })
-
-          console.log('[ASR响应] 完整响应:', JSON.stringify(result.data))
-
-          const respBody = result.data
-
-          // 后端返回业务错误（如 ASR 服务异常）
-          if (respBody?.statusCode && respBody?.statusCode !== 200) {
-            console.error('[ASR] 后端返回错误:', respBody)
-            const errMsg = respBody?.message || '识别结果异常'
-            Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
-            return
-          }
-
-          // 正常业务响应
-          if (respBody?.code === 200 && respBody?.data?.text !== undefined) {
-            const text = respBody.data.text
-            if (text) {
-              setRecognizedText(text)
-            } else {
-              setRecognizedText('（未识别到语音内容，请靠近麦克风重试）')
-            }
-          } else {
-            console.error('[ASR] 响应格式异常:', respBody)
-            Taro.showToast({
-              title: respBody?.msg || '识别结果异常',
-              icon: 'none'
-            })
-          }
-        } catch (err: any) {
-          console.error('[ASR] 识别失败:', err.message || err)
-          // 网络错误时提示更明确
-          const msg = err.message || ''
-          if (msg.includes('timeout') || msg.includes('fail') || msg.includes('network')) {
-            setServerOk(false)
-            Taro.showToast({ title: '服务连接失败，请返回重新扫码', icon: 'none', duration: 3000 })
-          } else if (msg.includes('过小')) {
-            Taro.showToast({ title: msg, icon: 'none' })
-          } else {
-            Taro.showToast({ title: '网络请求失败，请重试', icon: 'none' })
-          }
-        } finally {
-          setIsLoading(false)
-        }
+        await processMiniAppAudio(res.tempFilePath)
       })
 
       manager.onError((err) => {
@@ -130,21 +87,197 @@ const IndexPage = () => {
     }
   }, [isMiniApp])
 
-  const handleToggleRecord = () => {
-    if (!isMiniApp) {
-      Taro.showToast({ title: '录音仅支持小程序', icon: 'none' })
+  // 小程序端音频处理
+  const processMiniAppAudio = async (tempFilePath: string) => {
+    try {
+      setIsLoading(true)
+      const fileSystemManager = Taro.getFileSystemManager()
+      const arrayBuffer = fileSystemManager.readFileSync(tempFilePath) as ArrayBuffer
+      console.log('[音频] 原始大小:', arrayBuffer.byteLength, 'bytes')
+
+      if (arrayBuffer.byteLength < 100) {
+        throw new Error('录音文件过小，可能未录制到有效声音')
+      }
+
+      const base64 = Taro.arrayBufferToBase64(arrayBuffer)
+      console.log('[音频] base64长度:', base64.length)
+      await sendAudioToServer(base64)
+    } catch (err: any) {
+      handleAsrError(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Web 端录音处理
+  const handleWebToggleRecord = async () => {
+    if (isRecording && mediaRecorderRef.current) {
+      // 停止录音
+      mediaRecorderRef.current.stop()
       return
     }
 
-    if (isRecording) {
-      recorderManager?.stop()
-    } else {
-      recorderManager?.start({
-        format: 'wav',
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        frameSize: 50
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+        }
       })
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: getSupportedMimeType()
+      })
+
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        // 停止麦克风
+        stream.getTracks().forEach(track => track.stop())
+
+        setIsRecording(false)
+        console.log('[Web录音] 停止，chunks数量:', audioChunksRef.current.length)
+
+        if (audioChunksRef.current.length === 0) {
+          Taro.showToast({ title: '未录制到音频', icon: 'none' })
+          return
+        }
+
+        try {
+          setIsLoading(true)
+          const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType })
+          console.log('[Web录音] Blob大小:', audioBlob.size, 'bytes')
+
+          if (audioBlob.size < 100) {
+            throw new Error('录音文件过小，可能未录制到有效声音')
+          }
+
+          // 转换为 base64
+          const arrayBuffer = await audioBlob.arrayBuffer()
+          const base64 = arrayBufferToBase64(arrayBuffer)
+          console.log('[Web录音] base64长度:', base64.length)
+          await sendAudioToServer(base64)
+        } catch (err: any) {
+          handleAsrError(err)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+
+      mediaRecorderRef.current = mediaRecorder
+      mediaRecorder.start()
+      setIsRecording(true)
+      console.log('[Web录音] 开始录音')
+    } catch (err: any) {
+      console.error('[Web录音] 错误:', err.message || err)
+      if (err.name === 'NotAllowedError') {
+        Taro.showToast({ title: '请允许麦克风权限', icon: 'none', duration: 3000 })
+      } else if (err.name === 'NotFoundError') {
+        Taro.showToast({ title: '未找到麦克风设备', icon: 'none' })
+      } else {
+        Taro.showToast({ title: '录音失败: ' + (err.message || '未知错误'), icon: 'none' })
+      }
+    }
+  }
+
+  // 获取支持的 MIME 类型
+  const getSupportedMimeType = (): string => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+    ]
+    for (const type of types) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+        return type
+      }
+    }
+    return ''
+  }
+
+  // ArrayBuffer 转 Base64
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i])
+    }
+    return btoa(binary)
+  }
+
+  // 发送音频到服务器
+  const sendAudioToServer = async (base64: string) => {
+    const result = await Network.request({
+      url: '/api/asr/recognize',
+      method: 'POST',
+      data: { audioData: base64 }
+    })
+
+    console.log('[ASR响应] 完整响应:', JSON.stringify(result.data))
+
+    const respBody = result.data
+
+    // 后端返回业务错误
+    if (respBody?.statusCode && respBody?.statusCode !== 200) {
+      console.error('[ASR] 后端返回错误:', respBody)
+      const errMsg = respBody?.message || '识别结果异常'
+      Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
+      return
+    }
+
+    // 正常业务响应
+    if (respBody?.code === 200 && respBody?.data?.text !== undefined) {
+      const text = respBody.data.text
+      if (text) {
+        setRecognizedText(text)
+      } else {
+        setRecognizedText('（未识别到语音内容，请靠近麦克风重试）')
+      }
+    } else {
+      console.error('[ASR] 响应格式异常:', respBody)
+      Taro.showToast({
+        title: respBody?.msg || '识别结果异常',
+        icon: 'none'
+      })
+    }
+  }
+
+  // ASR 错误处理
+  const handleAsrError = (err: any) => {
+    console.error('[ASR] 识别失败:', err.message || err)
+    const msg = err.message || ''
+    if (msg.includes('timeout') || msg.includes('fail') || msg.includes('network')) {
+      setServerOk(false)
+      Taro.showToast({ title: '服务连接失败，请检查网络', icon: 'none', duration: 3000 })
+    } else if (msg.includes('过小')) {
+      Taro.showToast({ title: msg, icon: 'none' })
+    } else {
+      Taro.showToast({ title: '网络请求失败，请重试', icon: 'none' })
+    }
+  }
+
+  const handleToggleRecord = () => {
+    if (isMiniApp) {
+      if (isRecording) {
+        recorderManager?.stop()
+      } else {
+        recorderManager?.start({
+          format: 'wav',
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          frameSize: 50
+        })
+      }
+    } else {
+      handleWebToggleRecord()
     }
   }
 
@@ -156,7 +289,6 @@ const IndexPage = () => {
     const newIsLandscape = !isLandscape
     const env = Taro.getEnv()
 
-    // 小程序端：调用原生屏幕旋转 API
     try {
       if (env === Taro.ENV_TYPE.WEAPP) {
         const wxApi = (globalThis as any).wx
@@ -181,6 +313,9 @@ const IndexPage = () => {
     setRecognizedText(textInput.trim())
     setTextInput('')
   }
+
+  // 是否显示录音按钮（小程序 或 支持Web录音的浏览器）
+  const showRecordButton = isMiniApp || webRecorderSupported
 
   return (
     <View className="flex flex-col h-screen bg-white">
@@ -252,8 +387,9 @@ const IndexPage = () => {
         )}
       </View>
 
-      {/* 底部区域：录音按钮 / H5 降级输入 */}
-      {isMiniApp ? (
+      {/* 底部区域 */}
+      {showRecordButton ? (
+        /* 录音按钮（小程序 + Web 通用） */
         <View className="pb-16 pt-4 flex items-center justify-center">
           {isLoading ? (
             <View className="w-24 h-24 rounded-full bg-blue-50 flex items-center justify-center">
@@ -261,13 +397,17 @@ const IndexPage = () => {
             </View>
           ) : (
             <View
-              className={`w-24 h-24 rounded-full flex items-center justify-center select-none active:scale-90 transition-transform ${
+              className={`w-24 h-24 rounded-full flex flex-col items-center justify-center select-none active:scale-90 transition-transform ${
                 isRecording ? 'bg-red-100' : 'bg-gray-100'
               }`}
               onClick={handleToggleRecord}
             >
+              <Mic
+                size={28}
+                color={isRecording ? '#ef4444' : '#4b5563'}
+              />
               <Text
-                className={`block text-base font-bold ${
+                className={`block text-xs font-bold mt-1 ${
                   isRecording ? 'text-red-500' : 'text-gray-600'
                 }`}
               >
@@ -277,6 +417,7 @@ const IndexPage = () => {
           )}
         </View>
       ) : (
+        /* H5 降级：纯文字输入 */
         <View className="px-6 pb-16">
           <Input
             className="mb-3"
